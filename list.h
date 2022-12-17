@@ -8,7 +8,7 @@ struct list_entry {
         struct list_entry *head;
         struct list_entry *tail;
         size_t length;
-        void (*free)(void*);
+        void (*cleanup)(void*);
     } *metadata;
 
     struct list_entry *prev;
@@ -23,10 +23,15 @@ struct list_entry {
                     NULL)
 
 void list_set_allocator(void* (*alloc_fn)(size_t));
+void list_set_freefn(void (*free_fn)(void*));
+
+void list_set_cleanupfn(struct list_entry *entry, void (*cleanup_fn)(void*));
+
+void *list_alloc(size_t size);
+void list_dealloc(void *mem);
 
 struct list_entry *__list_get_entry(void *data);
 void *__list_get_data(struct list_entry *entry);
-
 
 #define list_head(list) ((typeof(list))__list_head(__list_get_entry(list)))
 void *__list_head(struct list_entry *list);

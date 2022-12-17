@@ -13,6 +13,7 @@ xcalloc(size_t size)
 }
 
 static void* (*__user_allocator)(size_t) = xcalloc;
+static void  (*__user_free)(void*) = free;
 
 static inline struct list_metadata*
 meta_alloc()
@@ -30,10 +31,44 @@ entry_alloc(size_t size)
     return memset(__user_allocator(entry_sz + size), 0, entry_sz);
 }
 
+void*
+list_alloc(size_t size)
+{
+    struct list_entry *entry = entry_alloc(size);
+
+    entry->metadata = meta_alloc();
+    entry->metadata->length = 1;
+    entry->metadata->head = entry;
+    entry->metadata->tail = entry;
+
+    return __list_get_data(entry);
+}
+
+void
+list_dealloc(void *mem)
+{
+    list_free(mem);
+}
+
 void
 list_set_allocator(void* (*alloc_fn)(size_t))
 {
     __user_allocator = alloc_fn ? alloc_fn : xcalloc;
+}
+
+void
+list_set_freefn(void (*free_fn)(void*))
+{
+    __user_free = free_fn ? free_fn : free;
+}
+
+void
+list_set_cleanup_fn(struct list_entry *entry, void (*cleanup_fn)(void*))
+{
+    if (!entry)
+        return;
+
+    entry->metadata->cleanup = cleanup_fn;
 }
 
 struct list_entry*
@@ -94,36 +129,36 @@ __list_free(struct list_entry *entry)
     else
         entry->metadata->tail = entry->prev;
 
-    if (entry->metadata->free)
-        entry->metadata->free(__list_get_data(entry));
+    if (entry->metadata->cleanup)
+        entry->metadata->cleanup(__list_get_data(entry));
 
     if (!entry->prev && !entry->next)
-        free(entry->metadata);
+        __user_free(entry->metadata);
     else
         entry->metadata->length -= 1;
 
-    free(entry);
+    __user_free(entry);
 }
 
 void
 __list_destroy(struct list_entry *entry)
 {
     struct list_entry *next;
-    void (*user_free)(void*);
+    void (*cleanup_fn)(void*);
 
     if (!entry)
         return;
 
-    user_free = entry->metadata->free;
-    free(entry->metadata);
+    cleanup_fn = entry->metadata->cleanup;
+    __user_free(entry->metadata);
 
     for (; entry; entry = next) {
         next = entry->next;
 
-        if (user_free)
-            user_free(__list_get_data(entry));
+        if (cleanup_fn)
+            cleanup_fn(__list_get_data(entry));
 
-        free(entry);
+        __user_free(entry);
     }
 }
 
